@@ -35,3 +35,15 @@ executable WeakHead
                        , mtl
                        , parsec
   default-language:    Haskell2010
+
+executable CallByValue
+  main-is:             Main.hs
+  other-modules:         Types
+                       , AbstractMachines
+  hs-source-dirs:        examples/CallByValue/src
+                       , src
+  build-depends:         base >= 4.12 && < 4.13
+                       , containers
+                       , mtl
+                       , parsec
+  default-language:    Haskell2010
