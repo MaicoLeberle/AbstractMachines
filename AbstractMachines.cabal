@@ -23,3 +23,15 @@ library AbstractMachinesLib
                     , parsec
   hs-source-dirs:   src
   default-language: Haskell2010
+
+executable WeakHead
+  main-is:             Main.hs
+  other-modules:         Types
+                       , AbstractMachines
+  hs-source-dirs:        examples/WeakHead/src
+                       , src
+  build-depends:         base >= 4.12 && < 4.13
+                       , containers
+                       , mtl
+                       , parsec
+  default-language:    Haskell2010
