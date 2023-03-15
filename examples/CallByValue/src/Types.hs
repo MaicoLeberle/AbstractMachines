@@ -214,47 +214,47 @@ instance AM.AbstractMachine Syntax CbVState where
     {-       (t u,               s, e)
         ->c1 (  u, Func (t, e) : s, e)
     -}
-    step st@CbVState{ term = App t u
-                    , stack   = s
-                    , env     = e
+    step st@CbVState{ term  = App t u
+                    , stack = s
+                    , env   = e
                     }
-        = Just st{ term    = u
-                 , stack      = Func (t, e) : s
-                 , env        = e
+        = Just st{ term     = u
+                 , stack    = Func (t, e) : s
+                 , env      = e
                  }
     {-       (Lv.t',   Func (u, e') : s,  e)
         ->c2 (    u, Arg (Lv.t', e) : s, e')
     -}
-    step st@CbVState{ term = t@(Lambda v t')
-                    , stack   = Func (u, e') : s
-                    , env     = e
+    step st@CbVState{ term  = t@(Lambda v t')
+                    , stack = Func (u, e') : s
+                    , env   = e
                     }
-        = Just st{ term    = u
-                 , stack      = Arg (t, e) : s
-                 , env        = e'
+        = Just st{ term     = u
+                 , stack    = Arg (t, e) : s
+                 , env      = e'
                  }
     {-       (Lv.t', Arg (u, e') : s,                  e)
          ->m (   t',               s, [v <- (u, e')] : e)
     -}
-    step st@CbVState{ term = t@(Lambda v t')
-                    , stack   = Arg (u, e') : s
-                    , env     = CbVEnv e
+    step st@CbVState{ term  = t@(Lambda v t')
+                    , stack = Arg (u, e') : s
+                    , env   = CbVEnv e
                     }
-        = Just st{ term    = t'
-                 , stack      = s
-                 , env        = CbVEnv $ (v, (u, e')) : e
+        = Just st{ term     = t'
+                 , stack    = s
+                 , env      = CbVEnv $ (v, (u, e')) : e
                  }
     {-      (x, s, e1 ++ [ x <- (t, e')] ++ e2)
         ->e (t, s,                          e')
     -}
-    step st@CbVState{ term = Var v
-                    , stack   = s
-                    , env     = CbVEnv e
+    step st@CbVState{ term  = Var v
+                    , stack = s
+                    , env   = CbVEnv e
                     }
         = do (t, e') <- findSubs v e
-             Just st{ term = t
-                    , stack   = s
-                    , env     = e'
+             Just st{ term  = t
+                    , stack = s
+                    , env   = e'
                     }
       where
         findSubs :: String
