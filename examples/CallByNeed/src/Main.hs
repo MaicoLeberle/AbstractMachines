@@ -16,15 +16,12 @@ main = do printMsg
   where
     printMsg :: IO ()
     printMsg = putStrLn $ concat [ "Milner abtract machine for the call-by-need"
-                                 , " Linear  Substituion Calculus lambda "
-                                 , "calculus."
+                                 , " Linear Substituion Calculus lambda "
+                                 , "calculus.\n"
                                  ]
 
     loop :: IO ()
-    loop = do putStrLn ""
-              input <- getTerm
-              st <- parseTerm input
-              loopAux st
+    loop = getTerm >>= parseTerm >>= loopAux
 
     getTerm :: IO String
     getTerm = do putStrLn "Lambda term to evaluate:"
@@ -43,18 +40,17 @@ main = do printMsg
                     reduce $ execState redFunc st
       where
         getRedFunction :: IO (State CbNeedState ())
-        getRedFunction = do
-            putStr "Number of reduction steps (ENTER: reduce to n.f.): "
-            opt <- getLine
-            if null opt
-                then pure normalize
-                else case readMaybe @Integer opt of
-                        Nothing -> do putStr "Wrong option. "
-                                      getRedFunction
-                        Just n -> pure $ reduceNSteps n
+        getRedFunction =
+            do putStr "Number of reduction steps (ENTER: reduce to n.f.): "
+               opt <- getLine
+               if null opt then pure normalize
+                           else case readMaybe @Integer opt of
+                                    Nothing -> do putStr "Wrong option. "
+                                                  getRedFunction
+                                    Just n -> pure $ reduceNSteps n
 
         reduce :: CbNeedState -> IO ()
-        reduce st | inNormalForm =
+        reduce st | evalState isNormal st =
                         do putStrLn $ concat [ "Normal form:\n"
                                              , evalState decodeState st
                                              ]
@@ -65,6 +61,3 @@ main = do printMsg
                                              , show st
                                              ]
                            loopAux st
-          where
-            inNormalForm :: Bool
-            inNormalForm = evalState isNormal st
