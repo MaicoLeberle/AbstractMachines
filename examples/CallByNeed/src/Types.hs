@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Types
-    ( Syntax
+    ( LSC(..)
     , CbNeedState (..)
     ) where
 
@@ -21,20 +21,22 @@ import qualified Text.ParserCombinators.Parsec as P
 import           AbstractMachines as AM
 
 
-instance AM.Parser Syntax where
-    data Term Syntax =
-          Var (Variable Syntax)
-        | App (Term Syntax) (Term Syntax)
-        | Lambda (Variable Syntax) (Term Syntax)
-        | ES (Term Syntax) (Variable Syntax) (Term Syntax)
-      deriving (Eq, Show)
+data LSC a =
+      Var a
+    | App (LSC a) (LSC a)
+    | Lambda a (LSC a)
+    | ES (LSC a) a (LSC a)
+  deriving (Eq)
 
-    type Variable Syntax = String
+type Variable = String
 
-    newVarName :: Set (Variable Syntax) -> Variable Syntax
+type LSCTerm = LSC Variable
+
+instance AM.Parser LSC Variable where
+    newVarName :: Set Variable -> Variable
     newVarName sv = breakOnSets $ Prelude.map (:[]) alphabet
       where
-        breakOnSets :: [Variable Syntax] -> Variable Syntax
+        breakOnSets :: [Variable] -> Variable
         breakOnSets currLayer = case breakOnSetsAux currLayer of
             Just res -> res
             Nothing  -> let nextLayer = do p <- currLayer
@@ -42,21 +44,21 @@ instance AM.Parser Syntax where
                                            pure (p ++ [s])
                         in breakOnSets nextLayer
 
-        breakOnSetsAux :: [Variable Syntax] -> Maybe (Variable Syntax)
+        breakOnSetsAux :: [Variable] -> Maybe Variable
         breakOnSetsAux [] = Nothing
         breakOnSetsAux (y:ys) | not $ y `member` sv = Just y
                               | otherwise = breakOnSetsAux ys
 
-    parse :: String -> Either P.ParseError (Term Syntax)
+    parse :: String -> Either P.ParseError (LSCTerm)
     parse = P.parse parseAux "Failed to parse."
       where
-        parseAux :: P.GenParser Char st (Term Syntax)
+        parseAux :: P.GenParser Char st (LSCTerm)
         parseAux = do
             parseRes <- parseTerm
             P.eof
             pure parseRes
 
-        parseTerm :: P.GenParser Char st (Term Syntax)
+        parseTerm :: P.GenParser Char st (LSCTerm)
         parseTerm =
                 (parseVar >>= pure . Var)
             P.<|> (do
@@ -84,7 +86,7 @@ instance AM.Parser Syntax where
             getDigit :: P.GenParser Char st Char
             getDigit = P.oneOf digits
 
-        parseLambda :: P.GenParser Char st (Term Syntax)
+        parseLambda :: P.GenParser Char st (LSCTerm)
         parseLambda = do
             P.char 'L'
             vName <- parseVar
@@ -92,20 +94,20 @@ instance AM.Parser Syntax where
             body <- parseTerm
             pure $ Lambda vName body
 
-        parseApp :: P.GenParser Char st (Term Syntax)
+        parseApp :: P.GenParser Char st (LSCTerm)
         parseApp = do
             firstTerm <- parseTerm
             P.char ' '
             secondTerm <- parseTerm
             pure $ App firstTerm secondTerm
 
-    unparse :: Term Syntax -> String
+    unparse :: LSCTerm -> String
     unparse (Lambda v t) = "(L" ++ v ++ "." ++ unparse t ++ ")"
     unparse (App t1 t2) = "(" ++ unparse t1 ++ " " ++ unparse t2 ++ ")"
     unparse (Var v) = v
     unparse (ES t x s) = unparse t ++ " [" ++ x ++ " <- " ++ unparse s ++ "]"
 
-    convertTerm :: Term Syntax -> Tree String
+    convertTerm :: LSCTerm -> Tree String
     convertTerm (Var v) =
         Node { rootLabel = "VAR"
              , subForest = [ Node {rootLabel = v, subForest = [] } ]
@@ -120,15 +122,18 @@ instance AM.Parser Syntax where
         Node { rootLabel = "APP"
              , subForest = [convertTerm t, convertTerm s]
              }
+    convertTerm (ES t x s) =
+        Node { rootLabel = "ES"
+             , subForest = [] -- TODO
+             }
 
-    substitute
-        :: Term Syntax -> Variable Syntax -> Term Syntax -> Term Syntax
+    substitute :: LSCTerm -> Variable -> LSCTerm -> LSCTerm
     substitute orig var subsFor = runReader (subs orig var subsFor) empty
       where
-        subs :: Term Syntax
-             -> Variable Syntax
-             -> Term Syntax
-             -> Reader (Set (Variable Syntax)) (Term Syntax)
+        subs :: LSCTerm
+             -> Variable
+             -> LSCTerm
+             -> Reader (Set Variable) (LSCTerm)
         subs t@(Var v') v u | v' == v   = pure u
                             | otherwise = pure t
         subs (App t1 t2) v u = do
@@ -144,22 +149,21 @@ instance AM.Parser Syntax where
                          $ asks $ Lambda nVar . (runReader (subs nBody v u))
             | otherwise = asks $ Lambda v' . (runReader (subs s v u))
           where
-            fv :: Term Syntax -> Set (Variable Syntax)
+            fv :: LSCTerm -> Set Variable
             fv t = fvAux t empty
 
-            fvAux :: Term Syntax
-                  -> Set (Variable Syntax)
-                  -> Set (Variable Syntax)
+            fvAux :: LSCTerm
+                  -> Set Variable
+                  -> Set Variable
             fvAux (Var v) bound | v `member` bound = empty
                                 | otherwise        = singleton v
             fvAux (App t1 t2) bound = fvAux t1 bound `union` fvAux t2 bound
             fvAux (Lambda v t) bound = fvAux t $ bound `union` singleton v
 
-    aName :: Term Syntax -> Term Syntax
+    aName :: LSCTerm -> LSCTerm
     aName t = runReader (aNameAux t) empty
       where
-        aNameAux
-            :: Term Syntax -> Reader (Set (Variable Syntax)) (Term Syntax)
+        aNameAux :: LSCTerm -> Reader (Set Variable) (LSCTerm)
         aNameAux v@(Var _) = pure v
         aNameAux (App t1 t2) = do bound <- ask
                                   pure $ App (runReader (aNameAux t1) bound)
@@ -173,10 +177,10 @@ instance AM.Parser Syntax where
                                 Lambda nVar . runReader (aNameAux nBody)
                    else asks $ Lambda v . runReader (aNameAux t) . (v `insert`)
 
-        subs :: Term Syntax
-             -> Variable Syntax
-             -> Term Syntax
-             -> Reader (Set (Variable Syntax)) (Term Syntax)
+        subs :: LSCTerm
+             -> Variable
+             -> LSCTerm
+             -> Reader (Set Variable) (LSCTerm)
         subs t@(Var v') v u | v' == v   = pure u
                             | otherwise = pure t
         subs (App t1 t2) v u = do
@@ -192,12 +196,10 @@ instance AM.Parser Syntax where
                          $ asks $ Lambda nVar . (runReader (subs nBody v u))
             | otherwise = asks $ Lambda v' . (runReader (subs s v u))
           where
-            fv :: Term Syntax -> Set (Variable Syntax)
+            fv :: LSCTerm -> Set Variable
             fv t = fvAux t empty
 
-            fvAux :: Term Syntax
-                  -> Set (Variable Syntax)
-                  -> Set (Variable Syntax)
+            fvAux :: LSCTerm -> Set Variable -> Set Variable
             fvAux (Var v) bound | v `member` bound = empty
                                 | otherwise        = singleton v
             fvAux (App t1 t2) bound = fvAux t1 bound `union` fvAux t2 bound
@@ -207,8 +209,8 @@ instance AM.Parser Syntax where
     Abstract Machines", 2014, Accattoli, Barenbaum and Mazza, for the underlying
     theory.
 -}
-instance AM.AbstractMachine Syntax CbNeedState where
-    initialState :: Term Syntax -> CbNeedState
+instance AM.AbstractMachine LSC Variable CbNeedState where
+    initialState :: LSCTerm -> CbNeedState
     initialState t = CbNeedState { term  = t
                                  , stack = mempty
                                  , dump  = mempty
@@ -245,7 +247,7 @@ instance AM.AbstractMachine Syntax CbNeedState where
                     , env      = e''
                     }
       where
-        findSubs :: Env -> Env -> Maybe (Env, Term Syntax, Env)
+        findSubs :: Env -> Env -> Maybe (Env, LSCTerm, Env)
         findSubs _              [] = Nothing
         findSubs e' ((y, u) : e'') | x == y = Just (e', u, e'')
                                    | otherwise = findSubs (e' ++ [(y, u)]) e''
@@ -287,19 +289,19 @@ instance AM.AbstractMachine Syntax CbNeedState where
     step                              _ = Nothing
 
     -- _(t, s, D, E)_ := _E_ < _D_ < _s_ < t > > >
-    decodeStateToTerm :: CbNeedState -> Term Syntax
+    decodeStateToTerm :: CbNeedState -> LSCTerm
     decodeStateToTerm CbNeedState{..} =
         decodeEnv env $ decodeDump dump $ decodeStack stack term
       where
         {-  _[]_              <t> := t
             _([x <- c] : ee)_ <t> := _e_ < t {x <- _c_} >
         -}
-        decodeEnv :: Env -> Term Syntax -> Term Syntax
+        decodeEnv :: Env -> LSCTerm -> LSCTerm
         decodeEnv                   [] t = t
         decodeEnv ((name, sub) : subs) t = decodeEnv subs $ ES t name sub
 
         --  _(t, e)_ = _e_ <t>
-        decodeDump :: Dump -> Term Syntax -> Term Syntax
+        decodeDump :: Dump -> LSCTerm -> LSCTerm
         decodeDump [] t = t
         decodeDump (DumpElem{..} : ee) t =
           ES (decodeEnv dEnv $ decodeDump ee $ decodeStack dStack $ Var dVar)
@@ -310,7 +312,7 @@ instance AM.AbstractMachine Syntax CbNeedState where
             _(Func c : ss)_ <t> := _ss_ < _c_ t>
             _(Arg  c : ss)_ <t> := _ss_ < t _c_>
         -}
-        decodeStack :: Stack -> Term Syntax -> Term Syntax
+        decodeStack :: Stack -> LSCTerm -> LSCTerm
         decodeStack       [] t = t
         decodeStack (a : aa) t = decodeStack aa $ App t a
 
@@ -322,14 +324,28 @@ alphabet = ['a'..'z']
 digits :: [Char]
 digits = ['0'..'9']
 
-data Syntax
-
 data CbNeedState = CbNeedState
-    { term    :: Term Syntax
+    { term    :: LSCTerm
     , stack   :: Stack
     , dump    :: Dump
     , env     :: Env
     }
+
+type Stack = [LSCTerm]
+
+type Dump = [DumpElem]
+
+data DumpElem = DumpElem
+    { dEnv   :: Env
+    , dVar   :: String
+    , dStack :: Stack
+    }
+  deriving (Eq)
+
+mkDumpElem :: Env -> String -> Stack -> DumpElem
+mkDumpElem = DumpElem
+
+type Env = [(String, LSCTerm)]
 
 instance Show CbNeedState where
     show CbNeedState{..} = concat [ "( "
@@ -382,16 +398,6 @@ unparseEnv env = concat [ "["
                               ]
 
 
-type Stack = [Term Syntax]
-
-type Dump = [DumpElem]
-
-data DumpElem = DumpElem
-    { dEnv   :: Env
-    , dVar   :: String
-    , dStack :: Stack
-    }
-  deriving (Eq)
 
 instance Show DumpElem where
   show DumpElem{..} = concat [ "("
@@ -402,8 +408,3 @@ instance Show DumpElem where
                              , unparseStack dStack
                              , ")"
                              ]
-
-mkDumpElem :: Env -> String -> Stack -> DumpElem
-mkDumpElem = DumpElem
-
-type Env = [(String, Term Syntax)]
