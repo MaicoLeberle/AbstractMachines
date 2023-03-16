@@ -162,48 +162,9 @@ instance AM.Parser LSC Variable where
 
     aName :: LSCTerm -> LSCTerm
     aName t = runReader (aNameAux t) empty
-      where
-        aNameAux :: LSCTerm -> Reader (Set Variable) (LSCTerm)
-        aNameAux v@(Var _) = pure v
-        aNameAux (App t1 t2) = do bound <- ask
-                                  pure $ App (runReader (aNameAux t1) bound)
-                                             (runReader (aNameAux t2) bound)
-        aNameAux (Lambda v t) =
-            do bound <- ask
-               if v `member` bound
-                   then do nVar <- asks newVarName
-                           nBody <- local (nVar `insert`) (subs t v (Var nVar))
-                           local (nVar `insert`) $ asks $
-                                Lambda nVar . runReader (aNameAux nBody)
-                   else asks $ Lambda v . runReader (aNameAux t) . (v `insert`)
 
-        subs :: LSCTerm
-             -> Variable
-             -> LSCTerm
-             -> Reader (Set Variable) (LSCTerm)
-        subs t@(Var v') v u | v' == v   = pure u
-                            | otherwise = pure t
-        subs (App t1 t2) v u = do
-            bound <- ask
-            pure $ App (runReader (subs t1 v u) bound)
-                         (runReader (subs t2 v u) bound)
-        subs t@(Lambda v' s) v u
-            | v == v' = pure t
-            | v' `member` fv u =
-                do nVar <- asks newVarName
-                   nBody <- local (nVar `insert`) (subs s v' (Var nVar))
-                   local (nVar `insert`)
-                         $ asks $ Lambda nVar . (runReader (subs nBody v u))
-            | otherwise = asks $ Lambda v' . (runReader (subs s v u))
-          where
-            fv :: LSCTerm -> Set Variable
-            fv t = fvAux t empty
-
-            fvAux :: LSCTerm -> Set Variable -> Set Variable
-            fvAux (Var v) bound | v `member` bound = empty
-                                | otherwise        = singleton v
-            fvAux (App t1 t2) bound = fvAux t1 bound `union` fvAux t2 bound
-            fvAux (Lambda v t) bound = fvAux t $ bound `union` singleton v
+    aNameAvoiding :: LSCTerm -> Set Variable -> LSCTerm
+    aNameAvoiding t = runReader (aNameAux t)
 
 {-  The MAD (Milner Abstract machine by-neeD). Refer to publication "Distilling
     Abstract Machines", 2014, Accattoli, Barenbaum and Mazza, for the underlying
@@ -280,11 +241,19 @@ instance AM.AbstractMachine LSC Variable CbNeedState where
                        , dump  = DumpElem {dEnv = e', dVar = x, dStack = s} : d
                        , env   = e''
                     }
-        = Just st{ term        = aName t'
-                 , stack       = s
-                 , dump        = d
-                 , env         = e' ++ [(x, t')] ++ e''
-                 }
+        = Just st { term       = aNameAvoiding t' boundVars
+                  , stack      = s
+                  , dump       = d
+                  , env        = e' ++ [(x, t')] ++ e''
+                  }
+      where
+        boundVars :: Set Variable
+        boundVars = Prelude.foldr union empty [ boundVarsTerm t'
+                                              , boundVarsStack s
+                                              , boundVarsDump d
+                                              , boundVarsEnv e'
+                                              , boundVarsEnv e''
+                                              ]
 
     step                              _ = Nothing
 
@@ -323,6 +292,48 @@ alphabet = ['a'..'z']
 
 digits :: [Char]
 digits = ['0'..'9']
+
+aNameAux :: LSCTerm -> Reader (Set Variable) (LSCTerm)
+aNameAux v@(Var _) = pure v
+aNameAux (App t1 t2) = do bound <- ask
+                          pure $ App (runReader (aNameAux t1) bound)
+                                     (runReader (aNameAux t2) bound)
+aNameAux (Lambda v t) =
+    do bound <- ask
+       if v `member` bound
+           then do nVar <- asks newVarName
+                   nBody <- local (nVar `insert`) (subs t v (Var nVar))
+                   local (nVar `insert`) $ asks $
+                        Lambda nVar . runReader (aNameAux nBody)
+           else asks $ Lambda v . runReader (aNameAux t) . (v `insert`)
+
+subs :: LSCTerm
+     -> Variable
+     -> LSCTerm
+     -> Reader (Set Variable) (LSCTerm)
+subs t@(Var v') v u | v' == v   = pure u
+                    | otherwise = pure t
+subs (App t1 t2) v u = do
+    bound <- ask
+    pure $ App (runReader (subs t1 v u) bound)
+                 (runReader (subs t2 v u) bound)
+subs t@(Lambda v' s) v u
+    | v == v' = pure t
+    | v' `member` fv u =
+        do nVar <- asks newVarName
+           nBody <- local (nVar `insert`) (subs s v' (Var nVar))
+           local (nVar `insert`)
+                 $ asks $ Lambda nVar . (runReader (subs nBody v u))
+    | otherwise = asks $ Lambda v' . (runReader (subs s v u))
+  where
+    fv :: LSCTerm -> Set Variable
+    fv t = fvAux t empty
+
+    fvAux :: LSCTerm -> Set Variable -> Set Variable
+    fvAux (Var v) bound | v `member` bound = empty
+                        | otherwise        = singleton v
+    fvAux (App t1 t2) bound = fvAux t1 bound `union` fvAux t2 bound
+    fvAux (Lambda v t) bound = fvAux t $ bound `union` singleton v
 
 data CbNeedState = CbNeedState
     { term    :: LSCTerm
@@ -408,3 +419,23 @@ instance Show DumpElem where
                              , unparseStack dStack
                              , ")"
                              ]
+
+boundVarsTerm :: LSCTerm -> Set Variable
+boundVarsTerm      (Var x) = empty
+boundVarsTerm    (App t s) = boundVarsTerm t `union` boundVarsTerm s
+boundVarsTerm (Lambda x t) = singleton x `union` boundVarsTerm t
+boundVarsTerm   (ES t x s) =
+    singleton x `union` boundVarsTerm t `union` boundVarsTerm s
+
+boundVarsStack :: Stack -> Set Variable
+boundVarsStack = Prelude.foldr (union . boundVarsTerm) empty
+
+boundVarsDump :: Dump -> Set Variable
+boundVarsDump = Prelude.foldr (\DumpElem{..} ->
+                                  union (boundVarsEnv dEnv
+                                            `union` boundVarsStack dStack)
+                              )
+                              empty
+
+boundVarsEnv :: Env -> Set Variable
+boundVarsEnv = fromList . Prelude.map fst
