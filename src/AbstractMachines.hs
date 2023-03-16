@@ -19,21 +19,19 @@ import qualified Text.ParserCombinators.Parsec  as P
 class Parser p where
     {-# MINIMAL parse, unparse, convertTerm, newVarName, substitute, aName #-}
 
-    data Term p
-
     type Variable p = r | r -> p
 
     newVarName :: Set (Variable p) -> Variable p
 
-    parse :: String -> Either P.ParseError (Term p)
+    parse :: String -> Either P.ParseError p
 
-    unparse :: Term p -> String
+    unparse :: p -> String
 
-    convertTerm :: Term p -> Tree String
+    convertTerm :: p -> Tree String
 
-    substitute :: Term p -> Variable p -> Term p -> Term p
+    substitute :: p -> Variable p -> p -> p
 
-    aName :: Term p -> Term p
+    aName :: p -> p
 
 class (Parser p, Show s) => AbstractMachine p s | s -> p where
     {-# MINIMAL   initialState
@@ -41,11 +39,11 @@ class (Parser p, Show s) => AbstractMachine p s | s -> p where
                 , decodeStateToTerm
                 #-}
 
-    initialState :: Term p -> s
+    initialState :: p -> s
 
     step :: s -> Maybe s
 
-    decodeStateToTerm :: s -> Term p
+    decodeStateToTerm :: s -> p
 
     compile :: String -> State s (Maybe s)
     compile input = case parse input of
