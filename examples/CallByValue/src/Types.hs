@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Types
-    ( Syntax
+    ( LCTerm
     , CbVState (..)
     ) where
 
@@ -21,19 +21,23 @@ import qualified Text.ParserCombinators.Parsec as P
 import           AbstractMachines as AM
 
 
-instance AM.Parser Syntax where
-    data Term Syntax =
-          Var (Variable Syntax)
-        | App (Term Syntax) (Term Syntax)
-        | Lambda (Variable Syntax) (Term Syntax)
-      deriving (Eq, Show)
+-- data Syntax
 
-    type Variable Syntax = String
+data LC a =
+      Var (Variable)
+    | App LCTerm LCTerm
+    | Lambda (Variable) LCTerm
+  deriving Eq
 
-    newVarName :: Set (Variable Syntax) -> Variable Syntax
+type Variable = String
+
+type LCTerm = LC Variable
+
+instance AM.Parser LC Variable where
+    newVarName :: Set Variable -> Variable
     newVarName sv = breakOnSets $ Prelude.map (:[]) alphabet
       where
-        breakOnSets :: [Variable Syntax] -> Variable Syntax
+        breakOnSets :: [Variable] -> Variable
         breakOnSets currLayer = case breakOnSetsAux currLayer of
             Just res -> res
             Nothing  -> let nextLayer = do p <- currLayer
@@ -41,21 +45,21 @@ instance AM.Parser Syntax where
                                            pure (p ++ [s])
                         in breakOnSets nextLayer
 
-        breakOnSetsAux :: [Variable Syntax] -> Maybe (Variable Syntax)
+        breakOnSetsAux :: [Variable] -> Maybe Variable
         breakOnSetsAux [] = Nothing
         breakOnSetsAux (y:ys) | not $ y `member` sv = Just y
                               | otherwise = breakOnSetsAux ys
 
-    parse :: String -> Either P.ParseError (Term Syntax)
+    parse :: String -> Either P.ParseError LCTerm
     parse = P.parse parseAux "Failed to parse."
       where
-        parseAux :: P.GenParser Char st (Term Syntax)
+        parseAux :: P.GenParser Char st LCTerm
         parseAux = do
             parseRes <- parseTerm
             P.eof
             pure parseRes
 
-        parseTerm :: P.GenParser Char st (Term Syntax)
+        parseTerm :: P.GenParser Char st LCTerm
         parseTerm =
                 (parseVar >>= pure . Var)
             P.<|> (do
@@ -83,7 +87,7 @@ instance AM.Parser Syntax where
             getDigit :: P.GenParser Char st Char
             getDigit = P.oneOf digits
 
-        parseLambda :: P.GenParser Char st (Term Syntax)
+        parseLambda :: P.GenParser Char st LCTerm
         parseLambda = do
             P.char 'L'
             vName <- parseVar
@@ -91,19 +95,19 @@ instance AM.Parser Syntax where
             body <- parseTerm
             pure $ Lambda vName body
 
-        parseApp :: P.GenParser Char st (Term Syntax)
+        parseApp :: P.GenParser Char st LCTerm
         parseApp = do
             firstTerm <- parseTerm
             P.char ' '
             secondTerm <- parseTerm
             pure $ App firstTerm secondTerm
 
-    unparse :: Term Syntax -> String
+    unparse :: LCTerm -> String
     unparse (Lambda v t) = "(L" ++ v ++ "." ++ unparse t ++ ")"
     unparse (App t1 t2) = "(" ++ unparse t1 ++ " " ++ unparse t2 ++ ")"
     unparse (Var v) = v
 
-    convertTerm :: Term Syntax -> Tree String
+    convertTerm :: LCTerm -> Tree String
     convertTerm (Var v) =
         Node { rootLabel = "VAR"
              , subForest = [ Node {rootLabel = v, subForest = [] } ]
@@ -120,13 +124,13 @@ instance AM.Parser Syntax where
              }
 
     substitute
-        :: Term Syntax -> Variable Syntax -> Term Syntax -> Term Syntax
+        :: LCTerm -> Variable -> LCTerm -> LCTerm
     substitute orig var subsFor = runReader (subs orig var subsFor) empty
       where
-        subs :: Term Syntax
-             -> Variable Syntax
-             -> Term Syntax
-             -> Reader (Set (Variable Syntax)) (Term Syntax)
+        subs :: LCTerm
+             -> Variable
+             -> LCTerm
+             -> Reader (Set (Variable)) LCTerm
         subs t@(Var v') v u | v' == v   = pure u
                             | otherwise = pure t
         subs (App t1 t2) v u = do
@@ -142,22 +146,22 @@ instance AM.Parser Syntax where
                          $ asks $ Lambda nVar . (runReader (subs nBody v u))
             | otherwise = asks $ Lambda v' . (runReader (subs s v u))
           where
-            fv :: Term Syntax -> Set (Variable Syntax)
+            fv :: LCTerm -> Set (Variable)
             fv t = fvAux t empty
 
-            fvAux :: Term Syntax
-                  -> Set (Variable Syntax)
-                  -> Set (Variable Syntax)
+            fvAux :: LCTerm
+                  -> Set (Variable)
+                  -> Set (Variable)
             fvAux (Var v) bound | v `member` bound = empty
                                 | otherwise        = singleton v
             fvAux (App t1 t2) bound = fvAux t1 bound `union` fvAux t2 bound
             fvAux (Lambda v t) bound = fvAux t $ bound `union` singleton v
 
-    aName :: Term Syntax -> Term Syntax
+    aName :: LCTerm -> LCTerm
     aName t = runReader (aNameAux t) empty
       where
         aNameAux
-            :: Term Syntax -> Reader (Set (Variable Syntax)) (Term Syntax)
+            :: LCTerm -> Reader (Set (Variable)) LCTerm
         aNameAux v@(Var _) = pure v
         aNameAux (App t1 t2) =
             do bound <- ask
@@ -172,10 +176,10 @@ instance AM.Parser Syntax where
                                 Lambda nVar . runReader (aNameAux nBody)
                    else asks $ Lambda v . runReader (aNameAux t) . (v `insert`)
 
-        subs :: Term Syntax
-             -> Variable Syntax
-             -> Term Syntax
-             -> Reader (Set (Variable Syntax)) (Term Syntax)
+        subs :: LCTerm
+             -> Variable
+             -> LCTerm
+             -> Reader (Set (Variable)) LCTerm
         subs t@(Var v') v u | v' == v   = pure u
                             | otherwise = pure t
         subs (App t1 t2) v u = do
@@ -191,12 +195,12 @@ instance AM.Parser Syntax where
                          $ asks $ Lambda nVar . (runReader (subs nBody v u))
             | otherwise = asks $ Lambda v' . (runReader (subs s v u))
           where
-            fv :: Term Syntax -> Set (Variable Syntax)
+            fv :: LCTerm -> Set (Variable)
             fv t = fvAux t empty
 
-            fvAux :: Term Syntax
-                  -> Set (Variable Syntax)
-                  -> Set (Variable Syntax)
+            fvAux :: LCTerm
+                  -> Set (Variable)
+                  -> Set (Variable)
             fvAux (Var v) bound | v `member` bound = empty
                                 | otherwise        = singleton v
             fvAux (App t1 t2) bound = fvAux t1 bound `union` fvAux t2 bound
@@ -206,8 +210,8 @@ instance AM.Parser Syntax where
     Refer to publication "Distilling Abstract Machines", 2014, Accattoli,
     Barenbaum and Mazza, for the underlying theory.
 -}
-instance AM.AbstractMachine Syntax CbVState where
-    initialState :: Term Syntax -> CbVState
+instance AM.AbstractMachine LC Variable CbVState where
+    initialState :: LCTerm -> CbVState
     initialState t = CbVState {term = t, stack = [], env = CbVEnv []}
 
     step :: CbVState -> Maybe CbVState
@@ -258,20 +262,20 @@ instance AM.AbstractMachine Syntax CbVState where
                     }
       where
         findSubs :: String
-                 -> [(String, (Term Syntax, CbVEnv))]
-                 -> Maybe (Term Syntax, CbVEnv)
+                 -> [(String, (LCTerm, CbVEnv))]
+                 -> Maybe (LCTerm, CbVEnv)
         findSubs name e = snd <$> find ((==) name . fst) e
 
     step                              _ = Nothing
 
     -- _(t, s, e)_ := _s_ < _e_ < t > >
-    decodeStateToTerm :: CbVState -> Term Syntax
+    decodeStateToTerm :: CbVState -> LCTerm
     decodeStateToTerm CbVState{..} = decodeStack stack (decodeEnv env term)
       where
         {-  _[]_              <t> := t
             _([x <- c] : ee)_ <t> := _e_ < t {x <- _c_} >
         -}
-        decodeEnv ::  CbVEnv -> Term Syntax -> Term Syntax
+        decodeEnv ::  CbVEnv -> LCTerm -> LCTerm
         decodeEnv (CbVEnv [])           t = t
         decodeEnv (CbVEnv ((v, c) : e)) t =
             decodeEnv (CbVEnv e) (substitute t v (decodeClosure c))
@@ -280,13 +284,13 @@ instance AM.AbstractMachine Syntax CbVState where
             _(Func c : ss)_ <t> := _ss_ < _c_ t>
             _(Arg  c : ss)_ <t> := _ss_ < t _c_>
         -}
-        decodeStack :: Stack -> Term Syntax -> Term Syntax
+        decodeStack :: Stack -> LCTerm -> LCTerm
         decodeStack            [] t = t
         decodeStack (Func c : ss) t = decodeStack ss (App (decodeClosure c) t)
         decodeStack  (Arg c : ss) t = decodeStack ss (App t (decodeClosure c))
 
         --  _(t, e)_ = _e_ <t>
-        decodeClosure :: (Term Syntax, CbVEnv) -> Term Syntax
+        decodeClosure :: (LCTerm, CbVEnv) -> LCTerm
         decodeClosure (t, e) = decodeEnv e t
 
 
@@ -297,10 +301,8 @@ alphabet = ['a'..'z']
 digits :: [Char]
 digits = ['0'..'9']
 
-data Syntax
-
 data CbVState = CbVState
-    { term    :: Term Syntax
+    { term    :: LCTerm
     , stack   :: Stack
     , env     :: CbVEnv
     }
@@ -321,14 +323,14 @@ instance Show StackElemType where
     show (Arg  (t, e)) = "(" ++ unparse t ++ ", " ++ show e ++  ")"
     show (Func (t, e)) = "(" ++ unparse t ++ ", " ++ show e ++  ")"
 
-type Closure = (Term Syntax, CbVEnv)
+type Closure = (LCTerm, CbVEnv)
 
-data CbVEnv = CbVEnv [(String, (Term Syntax, CbVEnv))]
+data CbVEnv = CbVEnv [(String, (LCTerm, CbVEnv))]
   deriving (Eq)
 
 instance Show CbVEnv where
     show (CbVEnv e) = show $ Prelude.map unparseEntry e
       where
-        unparseEntry :: (String, (Term Syntax, CbVEnv))
+        unparseEntry :: (String, (LCTerm, CbVEnv))
                      -> (String, (String, CbVEnv))
         unparseEntry (s, (t, e)) = (s, (unparse t, e))

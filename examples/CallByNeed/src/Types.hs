@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Types
-    ( LSC(..)
+    ( LSCTerm
     , CbNeedState (..)
     ) where
 
@@ -26,7 +26,7 @@ data LSC a =
     | App (LSC a) (LSC a)
     | Lambda a (LSC a)
     | ES (LSC a) a (LSC a)
-  deriving (Eq)
+  deriving Eq
 
 type Variable = String
 
