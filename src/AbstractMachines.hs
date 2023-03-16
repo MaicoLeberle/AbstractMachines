@@ -1,4 +1,5 @@
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 
 
@@ -16,37 +17,35 @@ import           Data.Tree
 import qualified Text.ParserCombinators.Parsec  as P
 
 
-class Parser p where
+class Parser (t :: * -> *) v  | v -> t where
     {-# MINIMAL parse, unparse, convertTerm, newVarName, substitute, aName #-}
 
-    type Variable p = r | r -> p
+    newVarName :: Set v -> v
 
-    newVarName :: Set (Variable p) -> Variable p
+    parse :: String -> Either P.ParseError (t v)
 
-    parse :: String -> Either P.ParseError p
+    unparse :: t v -> String
 
-    unparse :: p -> String
+    convertTerm :: t v -> Tree String
 
-    convertTerm :: p -> Tree String
+    substitute :: t v -> v -> t v -> t v
 
-    substitute :: p -> Variable p -> p -> p
+    aName :: t v -> t v
 
-    aName :: p -> p
-
-class (Parser p, Show s) => AbstractMachine p s | s -> p where
+class (Parser t v, Show s) => AbstractMachine t v s | s -> t v where
     {-# MINIMAL   initialState
                 , step
                 , decodeStateToTerm
                 #-}
 
-    initialState :: p -> s
+    initialState :: t v -> s
 
     step :: s -> Maybe s
 
-    decodeStateToTerm :: s -> p
+    decodeStateToTerm :: s -> t v
 
     compile :: String -> State s (Maybe s)
-    compile input = case parse input of
+    compile input = case (parse input) :: Either P.ParseError (t v) of
         Right parsedTerm -> pure $ Just $ initialState parsedTerm
         Left         err -> pure Nothing
 
@@ -60,9 +59,7 @@ class (Parser p, Show s) => AbstractMachine p s | s -> p where
 
     isNormal :: State s Bool
     isNormal = do st <- get
-                  case step st of
-                      Just  _ -> pure False
-                      Nothing -> pure True
+                  pure $ isJust $ step st
 
     -- Note that normalize may be non-terminating! That is why we provide
     -- reduceNSteps as a terminating alternative.
@@ -75,4 +72,4 @@ class (Parser p, Show s) => AbstractMachine p s | s -> p where
 
     decodeState :: State s String
     decodeState = do st <- get
-                     pure $ unparse $ decodeStateToTerm st
+                     pure $ (unparse :: t v -> String) $ decodeStateToTerm st
