@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeFamilies          #-}
 
 module Types
-    ( WHSyntax
+    ( WHTerm
     , WHState
     ) where
 
@@ -18,20 +18,21 @@ import qualified Text.ParserCombinators.Parsec as P
 
 import           AbstractMachines as AM
 
+data WH a =
+      Var a
+    | App (WH a) (WH a)
+    | Lambda a (WH a)
+  deriving (Eq, Show)
 
-instance AM.Parser WHSyntax where
-    data Term WHSyntax =
-          Var (Variable WHSyntax)
-        | App (Term WHSyntax) (Term WHSyntax)
-        | Lambda (Variable WHSyntax) (Term WHSyntax)
-      deriving (Eq, Show)
+type Variable = String
 
-    type Variable WHSyntax = String
+type WHTerm = WH Variable
 
-    newVarName :: Set (Variable WHSyntax) -> Variable WHSyntax
+instance AM.Parser WH Variable where
+    newVarName :: Set Variable -> Variable
     newVarName sv = breakOnSets $ Prelude.map (:[]) alphabet
       where
-        breakOnSets :: [Variable WHSyntax] -> Variable WHSyntax
+        breakOnSets :: [Variable] -> Variable
         breakOnSets currLayer = case breakOnSetsAux currLayer of
             Just res -> res
             Nothing  -> let nextLayer = do p <- currLayer
@@ -39,21 +40,21 @@ instance AM.Parser WHSyntax where
                                            pure (p ++ [s])
                         in breakOnSets nextLayer
 
-        breakOnSetsAux :: [Variable WHSyntax] -> Maybe (Variable WHSyntax)
+        breakOnSetsAux :: [Variable] -> Maybe (Variable)
         breakOnSetsAux [] = Nothing
         breakOnSetsAux (y:ys) | not $ y `member` sv = Just y
                               | otherwise = breakOnSetsAux ys
 
-    parse :: String -> Either P.ParseError (Term WHSyntax)
+    parse :: String -> Either P.ParseError WHTerm
     parse = P.parse parseAux "Failed to parse."
       where
-        parseAux :: P.GenParser Char st (Term WHSyntax)
+        parseAux :: P.GenParser Char st WHTerm
         parseAux = do
             parseRes <- parseTerm
             P.eof
             pure parseRes
 
-        parseTerm :: P.GenParser Char st (Term WHSyntax)
+        parseTerm :: P.GenParser Char st WHTerm
         parseTerm =
                 (parseVar >>= pure . Var)
             P.<|> (do
@@ -81,7 +82,7 @@ instance AM.Parser WHSyntax where
             getDigit :: P.GenParser Char st Char
             getDigit = P.oneOf digits
 
-        parseLambda :: P.GenParser Char st (Term WHSyntax)
+        parseLambda :: P.GenParser Char st WHTerm
         parseLambda = do
             P.char 'L'
             vName <- parseVar
@@ -89,19 +90,19 @@ instance AM.Parser WHSyntax where
             body <- parseTerm
             pure $ Lambda vName body
 
-        parseApp :: P.GenParser Char st (Term WHSyntax)
+        parseApp :: P.GenParser Char st WHTerm
         parseApp = do
             firstTerm <- parseTerm
             P.char ' '
             secondTerm <- parseTerm
             pure $ App firstTerm secondTerm
 
-    unparse :: Term WHSyntax -> String
+    unparse :: WHTerm -> String
     unparse (Lambda v t) = "(L" ++ v ++ "." ++ unparse t ++ ")"
     unparse (App t1 t2) = "(" ++ unparse t1 ++ " " ++ unparse t2 ++ ")"
     unparse (Var v) = v
 
-    convertTerm :: Term WHSyntax -> Tree String
+    convertTerm :: WHTerm -> Tree String
     convertTerm (Var v) =
         Node { rootLabel = "VAR"
              , subForest = [ Node {rootLabel = v, subForest = [] } ]
@@ -118,13 +119,13 @@ instance AM.Parser WHSyntax where
              }
 
     substitute
-        :: Term WHSyntax -> Variable WHSyntax -> Term WHSyntax -> Term WHSyntax
+        :: WHTerm -> Variable -> WHTerm -> WHTerm
     substitute orig var subsFor = runReader (subs orig var subsFor) empty
       where
-        subs :: Term WHSyntax
-             -> Variable WHSyntax
-             -> Term WHSyntax
-             -> Reader (Set (Variable WHSyntax)) (Term WHSyntax)
+        subs :: WHTerm
+             -> Variable
+             -> WHTerm
+             -> Reader (Set (Variable)) WHTerm
         subs t@(Var v') v u | v' == v   = pure u
                             | otherwise = pure t
         subs (App t1 t2) v u = do
@@ -140,22 +141,22 @@ instance AM.Parser WHSyntax where
                          $ asks $ Lambda nVar . (runReader (subs nBody v u))
             | otherwise = asks $ Lambda v' . (runReader (subs s v u))
           where
-            fv :: Term WHSyntax -> Set (Variable WHSyntax)
+            fv :: WHTerm -> Set (Variable)
             fv t = fvAux t empty
 
-            fvAux :: Term WHSyntax
-                  -> Set (Variable WHSyntax)
-                  -> Set (Variable WHSyntax)
+            fvAux :: WHTerm
+                  -> Set (Variable)
+                  -> Set (Variable)
             fvAux (Var v) bound | v `member` bound = empty
                                 | otherwise        = singleton v
             fvAux (App t1 t2) bound = fvAux t1 bound `union` fvAux t2 bound
             fvAux (Lambda v t) bound = fvAux t $ bound `union` singleton v
 
-    aName :: Term WHSyntax -> Term WHSyntax
+    aName :: WHTerm -> WHTerm
     aName t = runReader (aNameAux t) empty
       where
         aNameAux
-            :: Term WHSyntax -> Reader (Set (Variable WHSyntax)) (Term WHSyntax)
+            :: WHTerm -> Reader (Set (Variable)) WHTerm
         aNameAux v@(Var _) = pure v
         aNameAux (App t1 t2) =
             do bound <- ask
@@ -170,10 +171,10 @@ instance AM.Parser WHSyntax where
                                 Lambda nVar . runReader (aNameAux nBody)
                    else asks $ Lambda v . runReader (aNameAux t) . (v `insert`)
 
-        subs :: Term WHSyntax
-             -> Variable WHSyntax
-             -> Term WHSyntax
-             -> Reader (Set (Variable WHSyntax)) (Term WHSyntax)
+        subs :: WHTerm
+             -> Variable
+             -> WHTerm
+             -> Reader (Set (Variable)) WHTerm
         subs t@(Var v') v u | v' == v   = pure u
                             | otherwise = pure t
         subs (App t1 t2) v u = do
@@ -189,28 +190,28 @@ instance AM.Parser WHSyntax where
                          $ asks $ Lambda nVar . (runReader (subs nBody v u))
             | otherwise = asks $ Lambda v' . (runReader (subs s v u))
           where
-            fv :: Term WHSyntax -> Set (Variable WHSyntax)
+            fv :: WHTerm -> Set (Variable)
             fv t = fvAux t empty
 
-            fvAux :: Term WHSyntax
-                  -> Set (Variable WHSyntax)
-                  -> Set (Variable WHSyntax)
+            fvAux :: WHTerm
+                  -> Set (Variable)
+                  -> Set (Variable)
             fvAux (Var v) bound | v `member` bound = empty
                                 | otherwise        = singleton v
             fvAux (App t1 t2) bound = fvAux t1 bound `union` fvAux t2 bound
             fvAux (Lambda v t) bound = fvAux t $ bound `union` singleton v
 
 
-instance AM.AbstractMachine WHSyntax WHState where
-    initialState :: Term WHSyntax -> WHState
+instance AM.AbstractMachine WH Variable WHState where
+    initialState :: WHTerm -> WHState
     initialState = (, [])
 
     step :: WHState -> Maybe WHState
-    step (Lambda v t, a : aa) = Just (substitute @WHSyntax t v a, aa)
+    step (Lambda v t, a : aa) = Just (substitute t v a, aa)
     step (App t1 t2, a) = Just (t1, t2 : a)
     step _ = Nothing
 
-    decodeStateToTerm :: WHState -> Term WHSyntax
+    decodeStateToTerm :: WHState -> WHTerm
     decodeStateToTerm (t, aa) = Prelude.foldl App t aa
 
 
@@ -221,6 +222,4 @@ alphabet = ['a'..'z']
 digits :: [Char]
 digits = ['0'..'9']
 
-data WHSyntax
-
-type WHState = (Term WHSyntax, [Term WHSyntax])
+type WHState = (WHTerm, [WHTerm])
