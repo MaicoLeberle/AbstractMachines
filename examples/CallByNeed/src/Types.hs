@@ -375,9 +375,9 @@ unparseStack stack = concat [ "["
                            ]
 
 unparseEnv :: Env -> String
-unparseEnv env = concat [ "["
+unparseEnv env = concat [ "{"
                         , unparseEnvAux
-                        , "]"
+                        , "}"
                         ]
   where
     unparseEnvAux = case env of

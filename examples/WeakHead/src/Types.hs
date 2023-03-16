@@ -204,15 +204,15 @@ instance AM.Parser WH Variable where
 
 instance AM.AbstractMachine WH Variable WHState where
     initialState :: WHTerm -> WHState
-    initialState = (, [])
+    initialState = WHState . (, [])
 
     step :: WHState -> Maybe WHState
-    step (Lambda v t, a : aa) = Just (substitute t v a, aa)
-    step (App t1 t2, a) = Just (t1, t2 : a)
+    step (WHState (Lambda v t, a : aa)) = Just $ WHState (substitute t v a, aa)
+    step (WHState (App t1 t2, a)) = Just $ WHState (t1, t2 : a)
     step _ = Nothing
 
     decodeStateToTerm :: WHState -> WHTerm
-    decodeStateToTerm (t, aa) = Prelude.foldl App t aa
+    decodeStateToTerm (WHState (t, aa)) = Prelude.foldl App t aa
 
 
 -- | Auxiliary values and types.
@@ -222,4 +222,28 @@ alphabet = ['a'..'z']
 digits :: [Char]
 digits = ['0'..'9']
 
-type WHState = (WHTerm, [WHTerm])
+data WHState = WHState (WHTerm, [WHTerm])
+  deriving Eq
+
+instance Show WHState where
+  show (WHState (t, s)) = concat [ "( "
+                                 , unparse t
+                                 , "\n, "
+                                 , unparseStack s
+                                 , "\n)"
+                                 ]
+
+unparseStack :: [WHTerm] -> String
+unparseStack stack = concat [ "["
+                            , unparseStackAux
+                            , "]"
+                            ]
+  where
+    unparseStackAux :: String
+    unparseStackAux = case stack of
+        []       -> ""
+        [t]      -> unparse t
+        (t : tt) -> concat [ unparse t
+                           , ", "
+                           , unparseStack tt
+                           ]

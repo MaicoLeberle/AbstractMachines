@@ -123,8 +123,7 @@ instance AM.Parser LC Variable where
              , subForest = [convertTerm t, convertTerm s]
              }
 
-    substitute
-        :: LCTerm -> Variable -> LCTerm -> LCTerm
+    substitute :: LCTerm -> Variable -> LCTerm -> LCTerm
     substitute orig var subsFor = runReader (subs orig var subsFor) empty
       where
         subs :: LCTerm
@@ -308,11 +307,54 @@ data CbVState = CbVState
     }
 
 instance Show CbVState where
-    show CbVState{..} = concat [ "( " ++ unparse term ++ "\n"
-                               , ", " ++   show stack ++ "\n"
-                               , ", " ++     show env ++ "\n"
-                               , ")"
+    show CbVState{..} = concat [ "( "
+                               , unparse term
+                               , "\n, "
+                               , unparseStack stack
+                               , "\n, "
+                               , unparseEnv env
+                               , "\n)"
                                ]
+
+unparseStack :: Stack -> String
+unparseStack stack = concat [ "["
+                            , unparseStackAux
+                            , "]"
+                            ]
+  where
+    unparseStackAux :: String
+    unparseStackAux = case stack of
+        []       -> ""
+        [t]      -> show t
+        (t : tt) -> concat [ show t
+                           , ", "
+                           , unparseStack tt
+                           ]
+
+unparseEnv :: CbVEnv -> String
+unparseEnv env = concat [ "{"
+                        , unparseEnvAux
+                        , "}"
+                        ]
+  where
+    unparseEnvAux :: String
+    unparseEnvAux = case env of
+      CbVEnv []       -> ""
+      CbVEnv [c]      -> unparseClosure c
+      CbVEnv (c : cc) -> concat [ unparseClosure c
+                                , ", "
+                                , unparseEnv $ CbVEnv cc
+                                ]
+
+    unparseClosure :: CbVEnvElem -> String
+    unparseClosure (x, (t, e)) = concat [ "["
+                                        , x
+                                        , " <- ("
+                                        , unparse t
+                                        , ", "
+                                        , unparseEnv e
+                                        , ")]"
+                                        ]
 
 type Stack = [StackElemType]
 
@@ -325,7 +367,9 @@ instance Show StackElemType where
 
 type Closure = (LCTerm, CbVEnv)
 
-data CbVEnv = CbVEnv [(String, (LCTerm, CbVEnv))]
+type CbVEnvElem = (String, (LCTerm, CbVEnv))
+
+data CbVEnv = CbVEnv [CbVEnvElem]
   deriving (Eq)
 
 instance Show CbVEnv where
