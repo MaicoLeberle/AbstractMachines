@@ -36,7 +36,7 @@ class Parser (t :: * -> *) v  | v -> t where
     aNameAvoiding :: t v -> Set v -> t v
     aNameAvoiding = const . aName
 
-class (Parser t v, Show s) => AbstractMachine t v s | s -> t v where
+class Parser t v => AbstractMachine t v s | s -> t v where
     {-# MINIMAL   initialState
                 , step
                 , decodeStateToTerm
