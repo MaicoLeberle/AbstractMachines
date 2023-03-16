@@ -248,11 +248,11 @@ instance AM.AbstractMachine LSC Variable CbNeedState where
                   }
       where
         boundVars :: Set Variable
-        boundVars = Prelude.foldr union empty [ boundVarsTerm t'
-                                              , boundVarsStack s
-                                              , boundVarsDump d
-                                              , boundVarsEnv e'
-                                              , boundVarsEnv e''
+        boundVars = Prelude.foldr union empty [ boundVariables t'
+                                              , boundVariables s
+                                              , boundVariables d
+                                              , boundVariables e'
+                                              , boundVariables e''
                                               ]
 
     step                              _ = Nothing
@@ -408,8 +408,6 @@ unparseEnv env = concat [ "{"
                               , unparseEnv ss
                               ]
 
-
-
 instance Show DumpElem where
   show DumpElem{..} = concat [ "("
                              , unparseEnv dEnv
@@ -420,22 +418,26 @@ instance Show DumpElem where
                              , ")"
                              ]
 
-boundVarsTerm :: LSCTerm -> Set Variable
-boundVarsTerm      (Var x) = empty
-boundVarsTerm    (App t s) = boundVarsTerm t `union` boundVarsTerm s
-boundVarsTerm (Lambda x t) = singleton x `union` boundVarsTerm t
-boundVarsTerm   (ES t x s) =
-    singleton x `union` boundVarsTerm t `union` boundVarsTerm s
+instance HasBoundVariables LSCTerm Variable where
+    boundVariables :: LSCTerm -> Set Variable
+    boundVariables      (Var x) = empty
+    boundVariables    (App t s) = boundVariables t `union` boundVariables s
+    boundVariables (Lambda x t) = singleton x `union` boundVariables t
+    boundVariables   (ES t x s) =
+        singleton x `union` boundVariables t `union` boundVariables s
 
-boundVarsStack :: Stack -> Set Variable
-boundVarsStack = Prelude.foldr (union . boundVarsTerm) empty
+instance HasBoundVariables Stack Variable where
+    boundVariables :: Stack -> Set Variable
+    boundVariables = Prelude.foldr (union . boundVariables) empty
 
-boundVarsDump :: Dump -> Set Variable
-boundVarsDump = Prelude.foldr (\DumpElem{..} ->
-                                  union (boundVarsEnv dEnv
-                                            `union` boundVarsStack dStack)
-                              )
-                              empty
+instance HasBoundVariables Dump Variable where
+    boundVariables :: Dump -> Set Variable
+    boundVariables = Prelude.foldr (\DumpElem{..} ->
+                                      union (boundVariables dEnv
+                                                `union` boundVariables dStack)
+                                  )
+                                  empty
 
-boundVarsEnv :: Env -> Set Variable
-boundVarsEnv = fromList . Prelude.map fst
+instance HasBoundVariables Env Variable where
+    boundVariables :: Env -> Set Variable
+    boundVariables = fromList . Prelude.map fst

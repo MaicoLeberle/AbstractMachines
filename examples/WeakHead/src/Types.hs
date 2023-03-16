@@ -8,7 +8,7 @@
 
 module Types
     ( WHTerm
-    , WHState
+    , WHState (..)
     ) where
 
 import           Control.Monad.Reader

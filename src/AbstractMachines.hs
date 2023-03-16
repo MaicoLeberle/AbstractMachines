@@ -6,6 +6,7 @@
 module AbstractMachines
     ( Parser (..)
     , AbstractMachine (..)
+    , HasBoundVariables (..)
     ) where
 
 import           Control.Monad.Reader
@@ -76,3 +77,6 @@ class (Parser t v, Show s) => AbstractMachine t v s | s -> t v where
     decodeState :: State s String
     decodeState = do st <- get
                      pure $ (unparse :: t v -> String) $ decodeStateToTerm st
+
+class HasBoundVariables a v | a -> v where
+    boundVariables :: a -> Set v
