@@ -16,7 +16,7 @@ build-type:          Simple
 extra-source-files:  CHANGELOG.md
 
 library AbstractMachinesLib
-  other-modules:    AbstractMachines
+  exposed-modules:    AbstractMachines
   build-depends:      base >=4.12 && <4.13
                     , containers
                     , mtl

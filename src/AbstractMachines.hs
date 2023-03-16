@@ -59,7 +59,7 @@ class (Parser t v, Show s) => AbstractMachine t v s | s -> t v where
 
     isNormal :: State s Bool
     isNormal = do st <- get
-                  pure $ isJust $ step st
+                  pure $ not $ isJust $ step st
 
     -- Note that normalize may be non-terminating! That is why we provide
     -- reduceNSteps as a terminating alternative.
