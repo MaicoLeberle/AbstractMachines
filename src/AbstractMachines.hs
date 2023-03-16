@@ -75,29 +75,6 @@ class (Parser p, Show s) => AbstractMachine p s | s -> p where
                                          normalize
                         Nothing    -> pure ()
 
-    runAM :: String -> State s (Maybe String)
-    runAM s = do
-        successfulParsing <- isJust <$> compile s
-        if successfulParsing
-            then do normalize
-                    Just <$> decodeState
-            else pure Nothing
-
-    runNSteps :: Integer -> State s String
-    runNSteps n = do reduceNSteps n
-                     decodeState
-
-    runAMOnTerm :: Term p -> State s (Term p)
-    runAMOnTerm t = do put $ initialState t
-                       normalize
-                       finalState <- get
-                       pure $ decodeStateToTerm finalState
-
-    runAMOnTermNSteps :: Integer -> State s (Term p)
-    runAMOnTermNSteps n = do reduceNSteps n
-                             finalState <- get
-                             pure $ decodeStateToTerm finalState
-
     decodeState :: State s String
     decodeState = do st <- get
                      pure $ unparse $ decodeStateToTerm st
