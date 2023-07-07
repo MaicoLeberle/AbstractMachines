@@ -1,0 +1,3 @@
+# Call-by-value
+
+Implementation of Leroy's abstract machine for the pure, right-to-left, call-by-value Lambda Calculus. The reference for this was taken from page 8 of the 2014 ICFP [Distilling Abstract Machines](https://ri.conicet.gov.ar/bitstream/handle/11336/117817/CONICET_Digital_Nro.c2ba07a4-9611-40b9-b2c6-643cc0385c9d_A.pdf?sequence=2&isAllowed=y) paper, where the reader should refer to for clarifications on the mathematical structures chosen for this abstract machine, as well as some interesting properties regarding its complexity.
